@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport"/>
+  <meta content="#142842" name="theme-color"/>
+  <title>
+   部品交換履歷｜Parts Replacement
+  </title>
+  <link href="style.css" rel="stylesheet"/>
+ </head>
+ <body>
+  <header>
+   <div class="shell top">
+    <div>
+     <div class="eyebrow">
+      EQUIPMENT MAINTENANCE · V4.0
+     </div>
+     <h1>
+      部品交換履歷
+      <span>
+       Parts Replacement
+      </span>
+     </h1>
+     <p>
+      現場快速登錄・交換履歷查詢・月別使用統計
+     </p>
+    </div>
+    <div class="connection-tools">
+     <div class="status" id="connection">
+      尚未連線
+     </div>
+     <button class="pin-btn" id="pinBtn" type="button">
+      存取 PIN（選用）
+     </button>
+    </div>
+   </div>
+  </header>
+  <main class="shell">
+   <nav aria-label="功能切換" class="tabs">
+    <button class="tab active" data-tab="entry">
+     ＋ 新增 / 修改
+    </button>
+    <button class="tab" data-tab="history">
+     交換履歷
+    </button>
+    <button class="tab" data-tab="stats">
+     使用統計
+    </button>
+   </nav>
+   <section class="panel active" id="entry">
+    <div class="section-heading">
+     <div>
+      <div class="eyebrow dark">
+       NEW RECORD
+      </div>
+      <h2 id="formTitle">
+       新增部品交換
+      </h2>
+      <p>
+       必填欄位以 * 標示。使用時間可留空，方便後續補充。
+      </p>
+     </div>
+    </div>
+    <form id="entryForm">
+     <div class="field">
+      <label for="part">
+       交換部品
+       <b>
+        *
+       </b>
+      </label>
+      <select id="part" required="">
+      </select>
+     </div>
+     <div class="two">
+      <div class="field">
+       <label for="date">
+        交換日期
+        <b>
+         *
+        </b>
+       </label>
+       <input id="date" required="" type="date"/>
+      </div>
+      <div class="field">
+       <label for="quantity">
+        交換數量
+        <b>
+         *
+        </b>
+       </label>
+       <input id="quantity" max="999" min="1" required="" step="1" type="number" value="1"/>
+      </div>
+     </div>
+     <div class="two">
+      <div class="field">
+       <label for="minutes">
+        使用時間（min）
+       </label>
+       <input id="minutes" min="0" placeholder="例如：3757" step="0.01" type="number"/>
+       <small id="hoursHint">
+        可不填
+       </small>
+      </div>
+      <div class="field">
+       <label for="operator">
+        操作員
+        <b>
+         *
+        </b>
+       </label>
+       <input autocomplete="name" id="operator" maxlength="80" placeholder="請輸入姓名或員工代碼" required=""/>
+      </div>
+     </div>
+     <div class="field">
+      <label for="location">
+       放置地點
+      </label>
+      <input id="location" maxlength="200" placeholder="例如：G1 零件架 A-02／倉庫 2F"/>
+     </div>
+     <div class="field">
+      <label for="notes">
+       備註 / 異常狀況
+      </label>
+      <textarea id="notes" maxlength="3000" placeholder="例如：新部品與原部品相比，slit 位置高出 1 mm" rows="4"></textarea>
+     </div>
+     <div class="field">
+      <label for="photo">
+       交換照片（選填）
+      </label>
+      <input accept="image/jpeg,image/png,image/webp" capture="environment" id="photo" type="file"/>
+      <small>
+       可直接拍照或選取相簿照片，系統自動壓縮；修改紀錄可更換照片。
+      </small>
+      <div id="photoPreview">
+      </div>
+     </div>
+     <div class="actions">
+      <button class="primary" id="saveBtn" type="submit">
+       儲存交換紀錄
+      </button>
+      <button class="secondary" id="cancelBtn" type="button">
+       清除／取消編輯
+      </button>
+     </div>
+     <p class="message" id="formMessage" role="status">
+     </p>
+    </form>
+   </section>
+   <section class="panel" id="history">
+    <div class="section-heading">
+     <div>
+      <div class="eyebrow dark">
+       HISTORY
+      </div>
+      <h2>
+       交換履歷
+      </h2>
+     </div>
+     <button class="secondary" id="refreshBtn">
+      重新整理
+     </button>
+    </div>
+    <div class="two">
+     <div class="field">
+      <label for="filterPart">
+       部品
+      </label>
+      <select id="filterPart">
+      </select>
+     </div>
+     <div class="field">
+      <label for="filterYear">
+       年份
+      </label>
+      <select id="filterYear">
+      </select>
+     </div>
+    </div>
+    <div class="muted" id="historyCount">
+    </div>
+    <div class="table-scroll">
+     <table>
+      <thead>
+       <tr>
+        <th>
+         交換日期
+        </th>
+        <th>
+         部品
+        </th>
+        <th>
+         數量
+        </th>
+        <th>
+         使用時間 (min)
+        </th>
+        <th>
+         操作員
+        </th>
+        <th>
+         放置地點
+        </th>
+        <th>
+         備註
+        </th>
+        <th>
+         照片
+        </th>
+        <th>
+         操作
+        </th>
+       </tr>
+      </thead>
+      <tbody id="historyBody">
+      </tbody>
+     </table>
+    </div>
+   </section>
+   <section class="panel" id="stats">
+    <div class="section-heading">
+     <div>
+      <div class="eyebrow dark">
+       MONTHLY USAGE
+      </div>
+      <h2>
+       月別使用數量
+      </h2>
+      <p>
+       依交換日期和交換數量自動計算。
+      </p>
+     </div>
+    </div>
+    <div class="two">
+     <div class="field">
+      <label for="statsYear">
+       年份
+      </label>
+      <select id="statsYear">
+      </select>
+     </div>
+     <div class="field">
+      <label for="statsPart">
+       部品
+      </label>
+      <select id="statsPart">
+      </select>
+     </div>
+    </div>
+    <div class="metrics">
+     <div class="metric">
+      <span>
+       年度交換數量
+      </span>
+      <strong id="annualQty">
+       0
+      </strong>
+     </div>
+     <div class="metric">
+      <span>
+       年度交換筆數
+      </span>
+      <strong id="annualCount">
+       0
+      </strong>
+     </div>
+    </div>
+    <div aria-label="每月交換數量長條圖" class="chart" id="chart">
+    </div>
+    <div class="table-scroll">
+     <table>
+      <thead>
+       <tr>
+        <th>
+         月份
+        </th>
+        <th>
+         交換數量
+        </th>
+        <th>
+         紀錄筆數
+        </th>
+       </tr>
+      </thead>
+      <tbody id="monthlyBody">
+      </tbody>
+     </table>
+    </div>
+   </section>
+   <footer>
+    部品交換履歷 · GitHub Pages + Google Sheets · 資料以 Google Sheets 為準
+   </footer>
+  </main>
+  <script src="config.js">
+  </script>
+  <script src="app.js">
+  </script>
+ </body>
+</html>
