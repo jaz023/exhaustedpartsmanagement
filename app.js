@@ -539,26 +539,41 @@ function renderStats() {
 
 // 初始設定
 function init() {
-  $('pinBtn').addEventListener(
-    'click',
-    () => {
-      const v = prompt(
-        '輸入 Apps Script 所設定的存取 PIN（留空可清除）',
-        pin
-      );
+  // 原本 PIN 按鈕
+  $('pinBtn').addEventListener('click', () => {
+    const v = prompt(
+      '輸入 Apps Script 所設定的存取 PIN（留空可清除）',
+      pin
+    );
 
-      if (v !== null) {
-        pin = v.trim();
-
-        sessionStorage.setItem(
-          'partsPin',
-          pin
-        );
-
-        load();
-      }
+    if (v !== null) {
+      pin = v.trim();
+      sessionStorage.setItem('partsPin', pin);
+      load();
     }
-  );
+  });
+
+  // 新增：更新部品清單
+  const refreshPartsBtn = $('refreshPartsBtn');
+
+  if (refreshPartsBtn) {
+    refreshPartsBtn.addEventListener('click', async () => {
+      refreshPartsBtn.disabled = true;
+      refreshPartsBtn.textContent = '更新中…';
+
+      try {
+        await load();
+      } catch (error) {
+        console.error('更新部品清單失敗：', error);
+      } finally {
+        refreshPartsBtn.disabled = false;
+        refreshPartsBtn.textContent = '↻ 更新部品清單';
+      }
+    });
+  }
+
+  // 下面繼續保留你原本 init() 的其他程式
+}
 
   for (const [id, all] of [
     ['part', null],
