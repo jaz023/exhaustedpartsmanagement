@@ -432,6 +432,55 @@ footer {
   font-weight:650
 }
 
+
+/* =====================================
+   V6.3 備品管理介面
+===================================== */
+
+.part-management {
+  margin-top: 16px;
+  margin-bottom: 18px;
+}
+
+.part-management details {
+  border: 1px solid #dce5ed;
+  border-radius: 12px;
+  padding: 14px;
+  background: #f8fbfd;
+}
+
+.part-management summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #205a88;
+}
+
+.part-management-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+}
+
+.part-management input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font: inherit;
+}
+
+.part-management button {
+  cursor: pointer;
+}
+
+#createPartMessage {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+
 .photo-note {
   font-size:12px;
   color:#667e90;
