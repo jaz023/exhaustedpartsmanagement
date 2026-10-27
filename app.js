@@ -594,6 +594,9 @@ function renderStats() {
       <td>${month.count}</td>
     </tr>
   `).join('');
+   
+// 更新使用時間趨勢曲線圖
+   renderUsageTrend();
 }
 
 
@@ -1052,3 +1055,242 @@ $('photo').addEventListener('change', () => {
 // ========================================
 
 init();
+
+/**
+ * V6.4 使用時間趨勢圖
+ *
+ * X 軸：交換日期
+ * Y 軸：使用時間 (min)
+ *
+ * 使用目前 Google Sheets 已讀取的 rows。
+ * 不需要額外圖表套件。
+ */
+
+function renderUsageTrend() {
+  const panel = $('statsPart')?.closest('.panel');
+
+  if (!panel) return;
+
+  let container = $('usageTrendSection');
+
+  // 第一次執行時建立圖表區
+  if (!container) {
+    container = document.createElement('section');
+    container.id = 'usageTrendSection';
+
+    container.style.cssText = `
+      margin-top: 28px;
+      padding: 20px;
+      background: #ffffff;
+      border: 1px solid #dce5ed;
+      border-radius: 16px;
+    `;
+
+    container.innerHTML = `
+      <h3 style="margin:0 0 8px">
+        部品使用時間趨勢
+      </h3>
+      <p style="color:#64748b">
+        X 軸：交換日期｜Y 軸：使用時間（min）
+      </p>
+      <div
+        id="usageTrendChart"
+        style="width:100%;overflow-x:auto"
+      ></div>
+      <p
+        id="usageTrendInfo"
+        style="color:#64748b;font-size:13px"
+      ></p>
+    `;
+
+    panel.appendChild(container);
+  }
+
+  const chart = $('usageTrendChart');
+  const info = $('usageTrendInfo');
+
+  const year = $('statsYear')?.value || '';
+  const part = $('statsPart')?.value || '';
+
+  // 不混合不同備品的壽命
+  if (!part) {
+    chart.innerHTML = '';
+    info.textContent = '請先選擇一種備品查看趨勢。';
+    return;
+  }
+
+  // 篩選有使用時間的交換紀錄
+  const data = rows
+    .filter(r => {
+      const minutes = Number(r.minutes);
+
+      return (
+        r.part === part &&
+        (!year || String(r.date).startsWith(year)) &&
+        r.minutes !== '' &&
+        r.minutes !== null &&
+        r.minutes !== undefined &&
+        Number.isFinite(minutes) &&
+        minutes >= 0
+      );
+    })
+    .map(r => ({
+      id: String(r.id || ''),
+      date: String(r.date),
+      minutes: Number(r.minutes)
+    }))
+    .sort((a, b) =>
+      a.date.localeCompare(b.date) ||
+      a.id.localeCompare(b.id)
+    );
+
+  if (!data.length) {
+    chart.innerHTML = '';
+    info.textContent = '這個備品目前沒有使用時間紀錄。';
+    return;
+  }
+
+  // SVG 繪圖設定
+  const width = Math.max(540, data.length * 65 + 100);
+  const height = 310;
+
+  const left = 72;
+  const right = 25;
+  const top = 25;
+  const bottom = 68;
+
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+
+  const maxValue = Math.max(
+    1,
+    ...data.map(item => item.minutes)
+  );
+
+  // Y 軸留出 10% 空間
+  const yMax = maxValue * 1.1;
+
+  const x = index =>
+    left +
+    (data.length === 1
+      ? plotWidth / 2
+      : index * plotWidth / (data.length - 1));
+
+  const y = value =>
+    top + plotHeight - value / yMax * plotHeight;
+
+  const ticks = 4;
+
+  // 水平輔助線與 Y 軸數值
+  const grid = Array.from(
+    { length: ticks + 1 },
+    (_, i) => {
+      const value = yMax * i / ticks;
+      const py = y(value);
+
+      return `
+        <line
+          x1="${left}"
+          y1="${py}"
+          x2="${width - right}"
+          y2="${py}"
+          stroke="#e2e8f0"
+          stroke-dasharray="4 4"
+        />
+        <text
+          x="${left - 10}"
+          y="${py + 4}"
+          text-anchor="end"
+          font-size="12"
+          fill="#64748b"
+        >
+          ${Math.round(value)}
+        </text>
+      `;
+    }
+  ).join('');
+
+  // 折線座標
+  const points = data.map((item, index) =>
+    `${x(index)},${y(item.minutes)}`
+  ).join(' ');
+
+  // 點與資料提示
+  const circles = data.map((item, index) => `
+    <circle
+      cx="${x(index)}"
+      cy="${y(item.minutes)}"
+      r="5"
+      fill="#ffffff"
+      stroke="#1769aa"
+      stroke-width="2.5"
+    >
+      <title>
+        ${item.date}｜${item.minutes} min
+      </title>
+    </circle>
+  `).join('');
+
+  // 日期標籤
+  const labels = data.map((item, index) => `
+    <text
+      x="${x(index)}"
+      y="${height - bottom + 22}"
+      transform="rotate(-40 ${x(index)}
+        ${height - bottom + 22})"
+      text-anchor="end"
+      font-size="11"
+      fill="#64748b"
+    >
+      ${item.date.slice(5)}
+    </text>
+  `).join('');
+
+  const line = data.length > 1
+    ? `
+      <polyline
+        points="${points}"
+        fill="none"
+        stroke="#1769aa"
+        stroke-width="3"
+        stroke-linejoin="round"
+        stroke-linecap="round"
+      />
+    `
+    : '';
+
+  chart.innerHTML = `
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="${width}"
+      height="${height}"
+      viewBox="0 0 ${width} ${height}"
+      role="img"
+      aria-label="部品使用時間趨勢圖"
+      style="display:block;max-width:none"
+    >
+      ${grid}
+
+      <line
+        x1="${left}"
+        y1="${top}"
+        x2="${left}"
+        y2="${top + plotHeight}"
+        stroke="#94a3b8"
+      />
+
+      ${line}
+      ${circles}
+      ${labels}
+    </svg>
+  `;
+
+  const average =
+    data.reduce((sum, item) => sum + item.minutes, 0) /
+    data.length;
+
+  info.textContent =
+    `${part}｜${data.length} 筆紀錄｜` +
+    `平均 ${average.toFixed(1)} min` +
+    `（${(average / 60).toFixed(1)} 小時）`;
+}
