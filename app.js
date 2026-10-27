@@ -1,6 +1,10 @@
 
 'use strict';
 
+// ========================================
+// 部品交換履歷 V6.3 — 完整 app.js
+// ========================================
+
 let PARTS = [
   'フィラメント',
   'チムニ',
@@ -18,41 +22,56 @@ let pin = sessionStorage.getItem('partsPin') || '';
 let editingId = null;
 let editingVersion = 0;
 
-// HTML 特殊字元處理
-const esc = v =>
-  String(v ?? '').replace(/[&<>"']/g, c => ({
+
+// ========================================
+// 1. 共用工具
+// ========================================
+
+const esc = value =>
+  String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;',
     '<': '&lt;',
     '>': '&gt;',
     '"': '&quot;',
     "'": '&#39;'
-  }[c]));
+  }[char]));
 
-// 建立下拉選單
-const opt = (items, all) =>
-  (all ? `<option value="">${all}</option>` : '') +
-  items.map(x =>
-    `<option value="${esc(x)}">${esc(x)}</option>`
+const opt = (items, placeholder) =>
+  (placeholder
+    ? `<option value="">${placeholder}</option>`
+    : ''
+  ) +
+  items.map(item =>
+    `<option value="${esc(item)}">${esc(item)}</option>`
   ).join('');
 
-// 更新連線狀態
-function status(text, cls = '') {
-  const e = $('connection');
-  e.textContent = text;
-  e.className = 'status ' + cls;
+function status(text, className = '') {
+  const element = $('connection');
+
+  if (!element) return;
+
+  element.textContent = text;
+  element.className = 'status ' + className;
 }
 
-// 透過 JSONP 查詢 Apps Script
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+
+// ========================================
+// 2. Google Apps Script JSONP
+// ========================================
+
 function jsonp(params, timeout = 14000) {
   return new Promise((resolve, reject) => {
 
     if (!api) {
-      return reject(
-        Error('尚未設定 config.js 的 API_URL')
-      );
+      reject(new Error('尚未設定 config.js 的 API_URL'));
+      return;
     }
 
-    const cb =
+    const callback =
       'parts_cb_' +
       Date.now() + '_' +
       Math.random().toString(36).slice(2);
@@ -60,88 +79,129 @@ function jsonp(params, timeout = 14000) {
     const script = document.createElement('script');
 
     let timer;
+    let finished = false;
 
-    const clean = () => {
+    function cleanup() {
+      if (finished) return;
+
+      finished = true;
       clearTimeout(timer);
-      delete window[cb];
+      delete window[callback];
       script.remove();
-    };
+    }
 
-    window[cb] = data => {
-      clean();
+    window[callback] = data => {
+      cleanup();
 
-      data?.ok
-        ? resolve(data)
-        : reject(
-            Error(data?.error || '伺服器回傳錯誤')
-          );
+      if (data?.ok) {
+        resolve(data);
+      } else {
+        reject(new Error(
+          data?.error || '伺服器回傳錯誤'
+        ));
+      }
     };
 
     script.onerror = () => {
-      clean();
-      reject(
-        Error('無法讀取 Apps Script；請檢查網址及部署權限')
-      );
+      cleanup();
+
+      reject(new Error(
+        '無法讀取 Apps Script，請檢查網址及部署權限'
+      ));
     };
 
-    const u = new URL(api);
+    const url = new URL(api);
 
     Object.entries({
       ...params,
       pin,
-      callback: cb
-    }).forEach(([k, v]) => {
-      u.searchParams.set(k, v);
+      callback
+    }).forEach(([key, value]) => {
+      url.searchParams.set(key, String(value));
     });
 
-    script.src = u.href;
+    script.src = url.href;
 
     timer = setTimeout(() => {
-      clean();
-      reject(Error('連線逾時'));
+      cleanup();
+      reject(new Error('連線逾時'));
     }, timeout);
 
     document.head.appendChild(script);
   });
 }
 
-// 年份選單
+
+// ========================================
+// 3. 年份選單
+// ========================================
+
 function updateYears() {
-  const ys = [
+  const years = [
     ...new Set([
       new Date().getFullYear(),
-      ...rows
-        .map(r => Number((r.date || '').slice(0, 4)))
-        .filter(Number.isFinite)
+      ...rows.map(record =>
+        Number(String(record.date || '').slice(0, 4))
+      ).filter(Number.isFinite)
     ])
   ].sort((a, b) => b - a);
 
   for (const id of ['filterYear', 'statsYear']) {
-    const el = $(id);
-    const old = el.value;
+    const element = $(id);
+    if (!element) continue;
 
-    el.innerHTML = opt(
-      ys.map(String),
-      id === 'filterYear'
-        ? '全部年份'
-        : null
+    const previous = element.value;
+
+    element.innerHTML = opt(
+      years.map(String),
+      id === 'filterYear' ? '全部年份' : null
     );
 
-    el.value = ys.map(String).includes(old)
-      ? old
-      : (
-          id === 'filterYear'
-            ? ''
-            : String(new Date().getFullYear())
-        );
+    element.value = years.map(String).includes(previous)
+      ? previous
+      : id === 'filterYear'
+        ? ''
+        : String(new Date().getFullYear());
   }
 }
 
-// 讀取 Google Sheets 紀錄
+
+// ========================================
+// 4. 更新備品下拉選單
+// ========================================
+
+function updatePartSelectors() {
+  const selectors = [
+    ['part', null],
+    ['filterPart', '全部部品'],
+    ['statsPart', '全部部品']
+  ];
+
+  selectors.forEach(([id, placeholder]) => {
+    const element = $(id);
+    if (!element) return;
+
+    const previous = element.value;
+
+    element.innerHTML = opt(PARTS, placeholder);
+
+    if ([...element.options].some(
+      option => option.value === previous
+    )) {
+      element.value = previous;
+    }
+  });
+}
+
+
+// ========================================
+// 5. 讀取 Google Sheets
+// ========================================
+
 async function load() {
   if (!api) {
     status('待設定 Google Sheets', 'bad');
-    return;
+    return false;
   }
 
   status('讀取中…');
@@ -155,106 +215,104 @@ async function load() {
       ? data.records
       : [];
 
-    // 從後端取得所有備品工作表名稱
-    if (
-      Array.isArray(data.parts) &&
-      data.parts.length
-    ) {
+    if (Array.isArray(data.parts)) {
       PARTS = data.parts;
-
-      for (const [id, label] of [
-        ['part', null],
-        ['filterPart', '全部部品'],
-        ['statsPart', '全部部品']
-      ]) {
-        const el = $(id);
-        const selected = el.value;
-
-        el.innerHTML = opt(PARTS, label);
-
-        if (
-          [...el.options].some(
-            o => o.value === selected
-          )
-        ) {
-          el.value = selected;
-        }
-      }
+      updatePartSelectors();
     }
 
     updateYears();
     render();
 
-    status(
-      `已連線 · ${rows.length} 筆`,
-      'ok'
-    );
+    status(`已連線 · ${rows.length} 筆`, 'ok');
 
-  } catch (e) {
+    return true;
+
+  } catch (error) {
     status('連線失敗', 'bad');
-    $('historyCount').textContent = e.message;
+
+    if ($('historyCount')) {
+      $('historyCount').textContent = error.message;
+    }
+
+    console.error('Google Sheets 讀取失敗：', error);
+
+    return false;
   }
 }
 
-// 重新整理畫面
+
+// ========================================
+// 6. 重新整理頁面資料
+// ========================================
+
 function render() {
   renderHistory();
   renderStats();
 }
 
-// 顯示交換履歷
+
+// ========================================
+// 7. 交換履歷
+// ========================================
+
 function renderHistory() {
-  let a = rows.slice().sort((x, y) =>
-    String(y.date).localeCompare(String(x.date)) ||
-    String(y.createdAt).localeCompare(
-      String(x.createdAt)
-    )
+  const tbody = $('historyBody');
+  if (!tbody) return;
+
+  let records = rows.slice().sort((a, b) =>
+    String(b.date).localeCompare(String(a.date)) ||
+    String(b.createdAt).localeCompare(String(a.createdAt))
   );
 
-  const part = $('filterPart').value;
-  const year = $('filterYear').value;
+  const selectedPart = $('filterPart')?.value || '';
+  const selectedYear = $('filterYear')?.value || '';
 
-  if (part) {
-    a = a.filter(r => r.part === part);
-  }
-
-  if (year) {
-    a = a.filter(r =>
-      String(r.date).startsWith(year)
+  if (selectedPart) {
+    records = records.filter(
+      record => record.part === selectedPart
     );
   }
 
-  $('historyCount').textContent =
-    `共 ${a.length} 筆`;
+  if (selectedYear) {
+    records = records.filter(
+      record => String(record.date).startsWith(selectedYear)
+    );
+  }
 
-  $('historyBody').innerHTML = a.length
-    ? a.map(r => `
+  if ($('historyCount')) {
+    $('historyCount').textContent =
+      `共 ${records.length} 筆`;
+  }
+
+  tbody.innerHTML = records.length
+    ? records.map(record => `
       <tr>
-        <td>${esc(r.date)}</td>
-        <td>${esc(r.part)}</td>
-        <td>${esc(r.quantity)}</td>
+        <td>${esc(record.date)}</td>
+        <td>${esc(record.part)}</td>
+        <td>${esc(record.quantity)}</td>
         <td>
-          ${r.minutes === ''
+          ${record.minutes === ''
             ? '—'
-            : esc(r.minutes)}
+            : esc(record.minutes)}
         </td>
-        <td>${esc(r.operator || '—')}</td>
-        <td>${esc(r.location || '—')}</td>
-        <td>${esc(r.notes || '—')}</td>
+        <td>${esc(record.operator || '—')}</td>
+        <td>${esc(record.location || '—')}</td>
+        <td>${esc(record.notes || '—')}</td>
         <td>
-          ${r.photoUrl
+          ${record.photoUrl
             ? `<a
-                 class="photo-link"
-                 target="_blank"
-                 rel="noopener noreferrer"
-                 href="${esc(r.photoUrl)}"
-               >📷 查看</a>`
+                class="photo-link"
+                target="_blank"
+                rel="noopener noreferrer"
+                href="${esc(record.photoUrl)}"
+              >📷 查看</a>`
             : '—'}
         </td>
         <td>
           <button
+            type="button"
             class="mini-btn edit-record"
-            data-id="${esc(r.id)}"
+            data-id="${esc(record.id)}"
           >
             修改
           </button>
@@ -269,41 +327,49 @@ function renderHistory() {
       </tr>
     `;
 
-  document.querySelectorAll(
-    '.edit-record'
-  ).forEach(b => {
-    b.addEventListener('click', () => {
-      editRecord(b.dataset.id);
+  document.querySelectorAll('.edit-record')
+    .forEach(button => {
+      button.addEventListener('click', () => {
+        editRecord(button.dataset.id);
+      });
     });
-  });
 }
 
-// 切換頁籤
+
+// ========================================
+// 8. 切換頁籤
+// ========================================
+
 function showTab(name) {
-  document.querySelectorAll(
-    '.tab,.panel'
-  ).forEach(x => {
-    x.classList.remove('active');
-  });
+  document.querySelectorAll('.tab, .panel')
+    .forEach(element => {
+      element.classList.remove('active');
+    });
 
   document.querySelector(
     `.tab[data-tab="${name}"]`
-  ).classList.add('active');
+  )?.classList.add('active');
 
-  $(name).classList.add('active');
+  $(name)?.classList.add('active');
 }
 
-// 清空表單
+
+// ========================================
+// 9. 重設表單
+// ========================================
+
 function resetForm() {
   editingId = null;
   editingVersion = 0;
 
   $('entryForm').reset();
 
-  $('date').value = new Date(
+  const today = new Date(
     Date.now() -
     new Date().getTimezoneOffset() * 60000
   ).toISOString().slice(0, 10);
+
+  $('date').value = today;
 
   $('hoursHint').textContent = '可不填';
   $('formTitle').textContent = '新增部品交換';
@@ -312,14 +378,18 @@ function resetForm() {
   $('formMessage').textContent = '';
 }
 
-// 編輯既有紀錄
+
+// ========================================
+// 10. 修改既有紀錄
+// ========================================
+
 function editRecord(id) {
-  const r = rows.find(x => x.id === id);
+  const record = rows.find(item => item.id === id);
 
-  if (!r) return;
+  if (!record) return;
 
-  editingId = r.id;
-  editingVersion = Number(r.version) || 1;
+  editingId = record.id;
+  editingVersion = Number(record.version) || 1;
 
   [
     'part',
@@ -329,32 +399,33 @@ function editRecord(id) {
     'operator',
     'location',
     'notes'
-  ].forEach(k => {
-    $(k).value = r[k] ?? '';
+  ].forEach(key => {
+    if ($(key)) {
+      $(key).value = record[key] ?? '';
+    }
   });
 
   $('photo').value = '';
 
-  $('photoPreview').innerHTML = r.photoUrl
+  $('photoPreview').innerHTML = record.photoUrl
     ? `
       <a
         class="photo-link"
         target="_blank"
         rel="noopener noreferrer"
-        href="${esc(r.photoUrl)}"
+        href="${esc(record.photoUrl)}"
       >
         📷 目前照片（未選新照片則保留）
       </a>
     `
     : '尚無照片';
 
-  $('formTitle').textContent =
-    '修改部品交換紀錄';
-
+  $('formTitle').textContent = '修改部品交換紀錄';
   $('saveBtn').textContent = '儲存修改';
 
   $('formMessage').textContent =
-    `正在編輯：${r.date} ${r.part}（版本 ${editingVersion}）`;
+    `正在編輯：${record.date} ${record.part}` +
+    `（版本 ${editingVersion}）`;
 
   showTab('entry');
 
@@ -364,41 +435,37 @@ function editRecord(id) {
   });
 }
 
-// 照片壓縮處理
+
+// ========================================
+// 11. 照片壓縮
+// ========================================
+
 async function compressedPhoto(file) {
   if (!file) return null;
 
-  if (![
+  const supportedTypes = [
     'image/jpeg',
     'image/png',
     'image/webp'
-  ].includes(file.type)) {
-    throw Error(
-      '照片格式僅支援 JPG、PNG、WebP'
-    );
+  ];
+
+  if (!supportedTypes.includes(file.type)) {
+    throw new Error('照片格式僅支援 JPG、PNG、WebP');
   }
 
   const bitmap = await createImageBitmap(file);
 
-  const max = 1600;
+  const maxSize = 1600;
 
   const scale = Math.min(
     1,
-    max / Math.max(
-      bitmap.width,
-      bitmap.height
-    )
+    maxSize / Math.max(bitmap.width, bitmap.height)
   );
 
   const canvas = document.createElement('canvas');
 
-  canvas.width = Math.round(
-    bitmap.width * scale
-  );
-
-  canvas.height = Math.round(
-    bitmap.height * scale
-  );
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
 
   canvas.getContext('2d').drawImage(
     bitmap,
@@ -411,12 +478,12 @@ async function compressedPhoto(file) {
   bitmap.close?.();
 
   let quality = 0.82;
-  let blob;
+  let blob = null;
 
   do {
-    blob = await new Promise(r =>
+    blob = await new Promise(resolve =>
       canvas.toBlob(
-        r,
+        resolve,
         'image/jpeg',
         quality
       )
@@ -429,29 +496,20 @@ async function compressedPhoto(file) {
     quality >= 0.42
   );
 
-  if (
-    !blob ||
-    blob.size > 3 * 1024 * 1024
-  ) {
-    throw Error(
-      '照片太大，請縮小後再上傳'
-    );
+  if (!blob || blob.size > 3 * 1024 * 1024) {
+    throw new Error('照片太大，請縮小後再上傳');
   }
 
-  const base64 = await new Promise(
-    (resolve, reject) => {
-      const reader = new FileReader();
+  const base64 = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
 
-      reader.onload = () =>
-        resolve(
-          String(reader.result).split(',')[1]
-        );
+    reader.onload = () => {
+      resolve(String(reader.result).split(',')[1]);
+    };
 
-      reader.onerror = reject;
-
-      reader.readAsDataURL(blob);
-    }
-  );
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 
   return {
     mime: 'image/jpeg',
@@ -459,211 +517,375 @@ async function compressedPhoto(file) {
   };
 }
 
-// 每月統計：依實際更換數量加總
-function renderStats() {
-  const y = $('statsYear').value;
-  const p = $('statsPart').value;
 
-  const a = rows.filter(r =>
-    r.date?.startsWith(y) &&
-    (!p || r.part === p)
+// ========================================
+// 12. 月別交換數量統計
+// ========================================
+
+function renderStats() {
+  const selectedYear = $('statsYear')?.value || '';
+  const selectedPart = $('statsPart')?.value || '';
+
+  const records = rows.filter(record =>
+    String(record.date || '').startsWith(selectedYear) &&
+    (!selectedPart || record.part === selectedPart)
   );
 
   const months = Array.from(
     { length: 12 },
-    (_, i) => ({
-      month: i + 1,
+    (_, index) => ({
+      month: index + 1,
       qty: 0,
       count: 0
     })
   );
 
-  a.forEach(r => {
-    const m = Number(
-      r.date.slice(5, 7)
+  records.forEach(record => {
+    const month = Number(
+      String(record.date).slice(5, 7)
     );
 
-    if (m >= 1 && m <= 12) {
-      months[m - 1].qty +=
-        Number(r.quantity) || 0;
+    if (month >= 1 && month <= 12) {
+      months[month - 1].qty +=
+        Number(record.quantity) || 0;
 
-      months[m - 1].count++;
+      months[month - 1].count++;
     }
   });
 
-  $('annualQty').textContent =
-    months.reduce(
-      (s, x) => s + x.qty,
-      0
-    );
+  $('annualQty').textContent = months.reduce(
+    (total, month) => total + month.qty,
+    0
+  );
 
-  $('annualCount').textContent =
-    a.length;
+  $('annualCount').textContent = records.length;
 
   const max = Math.max(
-    ...months.map(x => x.qty),
+    ...months.map(month => month.qty),
     1
   );
 
-  $('chart').innerHTML = months.map(x => `
+  $('chart').innerHTML = months.map(month => `
     <div class="bar-col">
       <span class="bar-count">
-        ${x.qty || ''}
+        ${month.qty || ''}
       </span>
+
       <div
         class="bar"
-        title="${x.month} 月：${x.qty}"
+        title="${month.month} 月：${month.qty}"
         style="height:${
-          x.qty
-            ? Math.max(
-                6,
-                x.qty / max * 125
-              )
+          month.qty
+            ? Math.max(6, month.qty / max * 125)
             : 2
         }px"
       ></div>
+
       <span class="bar-label">
-        ${x.month}月
+        ${month.month}月
       </span>
     </div>
   `).join('');
 
-  $('monthlyBody').innerHTML = months.map(x => `
+  $('monthlyBody').innerHTML = months.map(month => `
     <tr>
-      <td>${x.month} 月</td>
-      <td>${x.qty}</td>
-      <td>${x.count}</td>
+      <td>${month.month} 月</td>
+      <td>${month.qty}</td>
+      <td>${month.count}</td>
     </tr>
   `).join('');
 }
 
-// 初始設定
+
+// ========================================
+// 13. V6.3 網頁新增備品
+// ========================================
+
+async function createPartFromWeb() {
+  const nameField = $('newPartName');
+  const pinField = $('newPartAdminPin');
+  const button = $('createPartBtn');
+  const message = $('createPartMessage');
+
+  if (!nameField || !pinField || !button || !message) {
+    console.error('找不到新增備品表單元素');
+    return;
+  }
+
+  const partName = nameField.value.trim();
+  const adminPin = pinField.value;
+
+  function show(text, className = '') {
+    message.textContent = text;
+    message.className = 'message ' + className;
+  }
+
+  if (!api) {
+    show('請先設定 config.js 的 API_URL', 'error');
+    return;
+  }
+
+  if (!partName) {
+    show('請輸入備品名稱', 'error');
+    return;
+  }
+
+  if (
+    partName.length > 100 ||
+    /[\\/?*\[\]:]/.test(partName) ||
+    partName.startsWith('_')
+  ) {
+    show('備品名稱不合法', 'error');
+    return;
+  }
+
+  if (!adminPin) {
+    show('請輸入管理者 PIN', 'error');
+    return;
+  }
+
+  if (PARTS.includes(partName)) {
+    show('此備品已存在', 'error');
+    return;
+  }
+
+  if (!confirm(
+    `確定建立備品「${partName}」以及兩張圖表嗎？`
+  )) {
+    return;
+  }
+
+  button.disabled = true;
+  show('正在送出新增要求…');
+
+  try {
+    await fetch(api, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
+      body: JSON.stringify({
+        action: 'addPart',
+        pin,
+        adminPin,
+        partName
+      })
+    });
+
+    show('要求已送出，正在確認新工作表…');
+
+    let exists = false;
+
+    for (let attempt = 0; attempt < 8; attempt++) {
+      await sleep(1500);
+
+      try {
+        const result = await jsonp({
+          action: 'list'
+        });
+
+        if (
+          Array.isArray(result.parts) &&
+          result.parts.includes(partName)
+        ) {
+          exists = true;
+          break;
+        }
+      } catch (error) {
+        console.warn(
+          '確認新備品時讀取失敗：',
+          error
+        );
+      }
+    }
+
+    if (!exists) {
+      throw new Error(
+        '尚未確認新工作表。' +
+        '請先查看 Google Sheets 和 Apps Script 執行紀錄，' +
+        '勿重複提交。'
+      );
+    }
+
+    const refreshed = await load();
+
+    if (!refreshed) {
+      throw new Error(
+        '新工作表已建立，但更新網頁清單失敗。'
+      );
+    }
+
+    if ($('part')) {
+      $('part').value = partName;
+    }
+
+    nameField.value = '';
+    pinField.value = '';
+
+    show(
+      '✓ 新備品已建立。' +
+      '請到 Google Sheets 檢查月別長條圖與使用時間曲線圖。',
+      'good'
+    );
+
+  } catch (error) {
+    show(
+      '新增狀態未確認：' + error.message,
+      'error'
+    );
+
+  } finally {
+    button.disabled = false;
+  }
+}
+
+
+// ========================================
+// 14. 初始化按鈕及事件
+// ========================================
+
 function init() {
-  // 原本 PIN 按鈕
+
+  // PIN 設定
   $('pinBtn').addEventListener('click', () => {
-    const v = prompt(
+    const value = prompt(
       '輸入 Apps Script 所設定的存取 PIN（留空可清除）',
       pin
     );
 
-    if (v !== null) {
-      pin = v.trim();
-      sessionStorage.setItem('partsPin', pin);
+    if (value !== null) {
+      pin = value.trim();
+
+      sessionStorage.setItem(
+        'partsPin',
+        pin
+      );
+
       load();
     }
   });
 
-  // 新增：更新部品清單
+  // 更新部品清單
   const refreshPartsBtn = $('refreshPartsBtn');
 
   if (refreshPartsBtn) {
-    refreshPartsBtn.addEventListener('click', async () => {
-      refreshPartsBtn.disabled = true;
-      refreshPartsBtn.textContent = '更新中…';
+    refreshPartsBtn.addEventListener(
+      'click',
+      async () => {
+        refreshPartsBtn.disabled = true;
+        refreshPartsBtn.textContent = '更新中…';
 
-      try {
-        await load();
-      } catch (error) {
-        console.error('更新部品清單失敗：', error);
-      } finally {
-        refreshPartsBtn.disabled = false;
-        refreshPartsBtn.textContent = '↻ 更新部品清單';
+        try {
+          const success = await load();
+
+          if (!success) {
+            console.warn('部品清單更新失敗');
+          }
+
+        } finally {
+          refreshPartsBtn.disabled = false;
+          refreshPartsBtn.textContent = '↻ 更新部品清單';
+        }
       }
-    });
+    );
   }
 
-  // 下面繼續保留你原本 init() 的其他程式
-}
+  // V6.3 新增備品
+  const createPartBtn = $('createPartBtn');
 
-  for (const [id, all] of [
-    ['part', null],
-    ['filterPart', '全部部品'],
-    ['statsPart', '全部部品']
-  ]) {
-    $(id).innerHTML = opt(PARTS, all);
+  if (createPartBtn) {
+    createPartBtn.addEventListener(
+      'click',
+      createPartFromWeb
+    );
   }
 
+  // 初始化部品選單
+  updatePartSelectors();
+
+  // 設定今天日期
   $('date').value = new Date(
     Date.now() -
     new Date().getTimezoneOffset() * 60000
   ).toISOString().slice(0, 10);
 
-  $('minutes').addEventListener(
-    'input',
-    () => {
-      $('hoursHint').textContent =
-        $('minutes').value
-          ? `約 ${(Number($('minutes').value) / 60).toFixed(2)} 小時`
-          : '可不填';
-    }
-  );
+  // 使用時間換算
+  $('minutes').addEventListener('input', () => {
+    const minutes = Number($('minutes').value);
 
-  document.querySelectorAll(
-    '.tab'
-  ).forEach(t => {
-    t.addEventListener(
+    $('hoursHint').textContent =
+      $('minutes').value
+        ? `約 ${(minutes / 60).toFixed(2)} 小時`
+        : '可不填';
+  });
+
+  // 頁籤切換
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener(
       'click',
-      () => showTab(t.dataset.tab)
+      () => showTab(tab.dataset.tab)
     );
   });
 
+  // 取消編輯
   $('cancelBtn').addEventListener(
     'click',
     resetForm
   );
 
-  [
-    'filterPart',
-    'filterYear'
-  ].forEach(id => {
+  // 歷史查詢篩選
+  ['filterPart', 'filterYear'].forEach(id => {
     $(id).addEventListener(
       'change',
       renderHistory
     );
   });
 
-  [
-    'statsPart',
-    'statsYear'
-  ].forEach(id => {
+  // 統計篩選
+  ['statsPart', 'statsYear'].forEach(id => {
     $(id).addEventListener(
       'change',
       renderStats
     );
   });
 
+  // 重新整理
   $('refreshBtn').addEventListener(
     'click',
     load
   );
 
+  // 新增／修改交換紀錄
   $('entryForm').addEventListener(
     'submit',
     save
   );
 
+  // 連線 Google Sheets
   if (api) {
     load();
   } else {
-    status(
-      '待設定 Google Sheets',
-      'bad'
-    );
+    status('待設定 Google Sheets', 'bad');
   }
 }
 
-// 新增／修改交換紀錄
-async function save(e) {
-  e.preventDefault();
 
-  const msg = $('formMessage');
+// ========================================
+// 15. 儲存交換紀錄
+// ========================================
+
+async function save(event) {
+  event.preventDefault();
+
+  const message = $('formMessage');
   const button = $('saveBtn');
 
   if (!api) {
-    msg.textContent =
+    message.textContent =
       '請先在 config.js 設定 API_URL';
 
-    msg.className = 'message error';
+    message.className = 'message error';
     return;
   }
 
@@ -678,29 +900,21 @@ async function save(e) {
     ),
 
     part: $('part').value,
-
     date: $('date').value,
+    quantity: Number($('quantity').value),
 
-    quantity: Number(
-      $('quantity').value
-    ),
-
-    minutes:
-      $('minutes').value === ''
-        ? ''
-        : Number($('minutes').value),
+    minutes: $('minutes').value === ''
+      ? ''
+      : Number($('minutes').value),
 
     operator: $('operator').value.trim(),
-
     location: $('location').value.trim(),
-
     notes: $('notes').value.trim()
   };
 
-  // 輸入驗證
   if (
     !PARTS.includes(record.part) ||
-    !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(record.date) ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(record.date) ||
     !Number.isInteger(record.quantity) ||
     record.quantity < 1 ||
     !record.operator ||
@@ -713,21 +927,17 @@ async function save(e) {
       )
     )
   ) {
-    msg.textContent =
-      '請檢查必填欄位及數值';
-
-    msg.className = 'message error';
+    message.textContent = '請檢查必填欄位及數值';
+    message.className = 'message error';
     return;
   }
 
   button.disabled = true;
-  msg.className = 'message';
-  msg.textContent = '準備照片中…';
 
-  const action = editingId
-    ? 'update'
-    : 'add';
+  message.className = 'message';
+  message.textContent = '準備照片中…';
 
+  const action = editingId ? 'update' : 'add';
   const oldVersion = editingVersion;
 
   try {
@@ -735,16 +945,14 @@ async function save(e) {
       $('photo').files[0]
     );
 
-    msg.textContent =
+    message.textContent =
       '傳送中，正在向 Google Sheets 確認…';
 
-    // 寫入 Apps Script
     await fetch(api, {
       method: 'POST',
       mode: 'no-cors',
       headers: {
-        'Content-Type':
-          'text/plain;charset=utf-8'
+        'Content-Type': 'text/plain;charset=utf-8'
       },
       body: JSON.stringify({
         action,
@@ -755,94 +963,92 @@ async function save(e) {
       })
     });
 
-    // 再次查詢確認資料是否已寫入
+    // 由後端再次確認是否寫入
     let verified = false;
 
-    for (let i = 0; i < 8; i++) {
-      await new Promise(r =>
-        setTimeout(
-          r,
-          i === 0 ? 1200 : 1500
-        )
-      );
+    for (let attempt = 0; attempt < 8; attempt++) {
+      await sleep(attempt === 0 ? 1200 : 1500);
 
       try {
-        const res = await jsonp({
+        const result = await jsonp({
           action: 'check',
           id: record.id
-        }, 14000);
+        });
 
         if (
-          res.found &&
+          result.found &&
           (
             action === 'add' ||
-            res.version > oldVersion
+            Number(result.version) > oldVersion
           )
         ) {
           verified = true;
           break;
         }
 
-      } catch (err) {
-        if (i === 7) {
-          throw err;
+      } catch (error) {
+        if (attempt === 7) {
+          throw error;
         }
       }
     }
 
     if (!verified) {
-      throw Error(
-        '尚未確認寫入；可能是照片上傳失敗、權限不足或版本衝突。' +
-        '請重新整理歷史紀錄核對，勿立即重複送出。'
+      throw new Error(
+        '尚未確認寫入。' +
+        '請重新整理歷史紀錄核對，勿立即重複提交。'
       );
     }
 
     resetForm();
 
-    msg.textContent =
+    message.textContent =
       action === 'update'
         ? '✓ 修改成功，已寫入 Google Sheets'
         : '✓ 新增成功，已寫入 Google Sheets';
 
-    msg.className = 'message good';
+    message.className = 'message good';
 
     await load();
 
-  } catch (err) {
-    msg.textContent =
-      '寫入狀態未確認：' +
-      err.message;
+  } catch (error) {
+    message.textContent =
+      '寫入狀態未確認：' + error.message;
 
-    msg.className = 'message error';
+    message.className = 'message error';
 
   } finally {
     button.disabled = false;
   }
 }
 
-// 照片預覽
-$('photo').addEventListener(
-  'change',
-  () => {
-    const f = $('photo').files[0];
 
-    if (!f) return;
+// ========================================
+// 16. 照片預覽
+// ========================================
 
-    const u = URL.createObjectURL(f);
+$('photo').addEventListener('change', () => {
+  const file = $('photo').files[0];
 
-    $('photoPreview').innerHTML = '';
+  if (!file) return;
 
-    const img = document.createElement('img');
+  const url = URL.createObjectURL(file);
 
-    img.src = u;
-    img.alt = '照片預覽';
+  $('photoPreview').innerHTML = '';
 
-    img.onload = () =>
-      URL.revokeObjectURL(u);
+  const image = document.createElement('img');
 
-    $('photoPreview').appendChild(img);
-  }
-);
+  image.src = url;
+  image.alt = '照片預覽';
 
-// 啟動
+  image.onload = () => URL.revokeObjectURL(url);
+
+  $('photoPreview').appendChild(image);
+});
+
+
+// ========================================
+// 17. 啟動
+// ========================================
+
 init();
