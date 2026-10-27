@@ -78,6 +78,59 @@
 　　　>
   　　　↻ 更新部品清單
 　　　</button>
+      
+<!-- =====================================
+     V6.3 新增備品管理功能
+===================================== -->
+
+     <section class="part-management">
+      <details>
+       <summary>＋ 新增備品（管理者）</summary>
+
+       <div class="part-management-content">
+
+       <label for="newPartName">
+        新備品名稱
+       </label>
+
+       <input
+        type="text"
+        id="newPartName"
+        placeholder="例如：イオン源部品"
+        maxlength="100"
+        autocomplete="off"
+       >
+
+       <label for="newPartAdminPin">
+        管理者 PIN
+       </label>
+
+       <input
+        type="password"
+        id="newPartAdminPin"
+        placeholder="請輸入管理者 PIN"
+        autocomplete="off"
+       >
+
+       <button
+        type="button"
+        class="secondary"
+        id="createPartBtn"
+       >
+        ＋ 建立新備品
+       </button>
+
+       <div
+        id="createPartMessage"
+        class="message"
+        role="status"
+        aria-live="polite"
+       ></div>
+
+      </div>
+      </details>
+     </section>
+
 　　　</div>
      <div class="two">
       <div class="field">
